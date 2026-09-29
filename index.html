@@ -327,6 +327,7 @@ function shuffled(items){const copy=[...items];for(let i=copy.length-1;i>0;i--){
 const DAILY_MODE='noRepeat';
 const DAILY_LABEL='Advanced (No Repeats)';
 let dailyResultText='',practiceMode=false,dailySnapshot=null;
+let preparedPracticeResultBlob=null,practiceResultImagePromise=null;
 const headerLogoSrc=document.querySelector('.pause-logo').src;
 const headerTitle=(version,detail='')=>`<img class="header-logo" src="${headerLogoSrc}" alt="CodeTest2"><span class="header-version">${version}${detail?`<span class="header-detail">${detail}</span>`:''}</span>`;
 const dailyHeading=headerTitle('ADVANCED','colors/shapes may not repeat');
@@ -393,12 +394,13 @@ function checkDailyRollover(){
  if(!practiceMode&&activeDailyDate&&dailyDateKey()!==activeDailyDate)newGame();
 }
 function newGame(){
+ preparedPracticeResultBlob=null;practiceResultImagePromise=null;
  practiceMode=false;dailySnapshot=null;document.querySelector('.title').innerHTML=dailyHeading;
  startedAt=0;clockStarted=false;
  resetPause();
  activeDailyDate=dailyDateKey();
  
- secret=dailySolution(activeDailyDate);guesses=[];current=Array(4).fill(null);selectedSlot=null;undoStack=[];redoStack=[];document.getElementById('modal').classList.remove('show');shareButton.hidden=false;returnDailyButton.hidden=true;againButton.textContent='PLAY RANDOM PUZZLE';render();
+ secret=dailySolution(activeDailyDate);guesses=[];current=Array(4).fill(null);selectedSlot=null;undoStack=[];redoStack=[];document.getElementById('modal').classList.remove('show');shareButton.hidden=false;shareButton.disabled=false;returnDailyButton.hidden=true;againButton.textContent='PLAY RANDOM PUZZLE';render();
  const savedSnapshot=loadDailySnapshot(activeDailyDate);if(savedSnapshot){clearProgress();dailySnapshot=savedSnapshot;dailyResultText=savedSnapshot.resultText;returnToDailyResult();status.textContent='Today’s challenge is already complete in this browser. Review it or play a random puzzle.';return;}
  if(restoreProgress())return;
  status.textContent='Click a guess box, then choose a piece from the pool.';
@@ -412,13 +414,14 @@ function randomPracticeSolution(){
 }
 function startPracticeGame(){
  clearProgress();
+ preparedPracticeResultBlob=null;practiceResultImagePromise=null;
  practiceMode=true;document.querySelector('.title').innerHTML=practiceHeading;startedAt=0;clockStarted=false;resetPause();secret=randomPracticeSolution();guesses=[];current=Array(4).fill(null);selectedSlot=null;undoStack=[];redoStack=[];document.getElementById('modal').classList.remove('show');shareButton.hidden=true;returnDailyButton.hidden=false;againButton.textContent='PLAY ANOTHER RANDOM';render();status.textContent='Practice game: click a guess box, then choose a piece from the pool.';
 }
 function returnToDailyResult(){
  clearProgress();
  if(!dailySnapshot){newGame();return;}
  practiceMode=false;document.querySelector('.title').innerHTML=dailyHeading;secret=[...dailySnapshot.secret];guesses=dailySnapshot.guesses.map(row=>({g:[...row.g],fb:row.fb}));current=Array(4).fill(null);selectedSlot=null;undoStack=[];redoStack=[];render();
- const modal=document.getElementById('modal'),code=document.getElementById('code');code.innerHTML='';secret.forEach(piece=>code.appendChild(makeShape(piece)));document.getElementById('elapsedTime').textContent='Time: '+dailySnapshot.elapsed;document.getElementById('result').textContent=dailySnapshot.win?'CODE CRACKED!':'OUT OF GUESSES';document.getElementById('resultText').textContent=dailySnapshot.win?`You solved it in ${guesses.length} round${guesses.length===1?'':'s'}.`:'The hidden code was:';dailyResultText=dailySnapshot.resultText;shareButton.hidden=false;returnDailyButton.hidden=true;againButton.textContent='PLAY RANDOM PUZZLE';gameOver=true;pauseButton.disabled=true;modal.classList.add('show');
+ const modal=document.getElementById('modal'),code=document.getElementById('code');code.innerHTML='';secret.forEach(piece=>code.appendChild(makeShape(piece)));document.getElementById('elapsedTime').textContent='Time: '+dailySnapshot.elapsed;document.getElementById('result').textContent=dailySnapshot.win?'CODE CRACKED!':'OUT OF GUESSES';document.getElementById('resultText').textContent=dailySnapshot.win?`You solved it in ${guesses.length} round${guesses.length===1?'':'s'}.`:'The hidden code was:';dailyResultText=dailySnapshot.resultText;shareButton.hidden=false;shareButton.disabled=false;returnDailyButton.hidden=true;againButton.textContent='PLAY RANDOM PUZZLE';gameOver=true;pauseButton.disabled=true;modal.classList.add('show');
 }
 function endGame(win){
  clearProgress();
@@ -429,11 +432,15 @@ function endGame(win){
  if(practiceMode){
    dailyResultText=`CodeTest2 — ${DAILY_LABEL} Random\n${displayDailyDate(dailyDateKey())}\n${win?`Solved in ${guesses.length}/6 guesses`:'Not solved in 6 guesses'}\nTime: ${elapsed}`;
    shareButton.hidden=false;returnDailyButton.hidden=false;againButton.textContent='PLAY ANOTHER RANDOM';
+   shareButton.disabled=true;document.getElementById('shareStatus').textContent='Preparing the solved-code image…';
+   const imagePromise=createPracticeSolutionImage();practiceResultImagePromise=imagePromise;
+   imagePromise.then(blob=>{if(practiceResultImagePromise!==imagePromise)return null;preparedPracticeResultBlob=blob;shareButton.disabled=false;document.getElementById('shareStatus').textContent='Result image ready to share.';return blob;}).catch(()=>{if(practiceResultImagePromise!==imagePromise)return null;preparedPracticeResultBlob=null;shareButton.disabled=false;document.getElementById('shareStatus').textContent='Result text is ready; the solved-code image could not be prepared.';return null;});
  }else{
+   preparedPracticeResultBlob=null;practiceResultImagePromise=null;shareButton.disabled=false;
    dailyResultText=`CodeTest2 — ${DAILY_LABEL} Daily\n${displayDailyDate(activeDailyDate)}\n${win?`Solved in ${guesses.length}/6 guesses`:'Not solved in 6 guesses'}\nTime: ${elapsed}`;
    dailySnapshot={win,elapsed,resultText:dailyResultText,secret:[...secret],guesses:guesses.map(row=>({g:[...row.g],fb:row.fb}))};saveDailySnapshot(activeDailyDate,dailySnapshot);shareButton.hidden=false;returnDailyButton.hidden=true;againButton.textContent='PLAY RANDOM PUZZLE';
  }
- document.getElementById('shareStatus').textContent='';
+ if(!practiceMode)document.getElementById('shareStatus').textContent='';
  document.getElementById('shareFallback').hidden=true;
  document.getElementById('result').textContent=win?'CODE CRACKED!':'OUT OF GUESSES';
  document.getElementById('resultText').textContent=win?`You solved it in ${guesses.length} round${guesses.length===1?'':'s'}.`:'The hidden code was:';modal.classList.add('show');
@@ -463,8 +470,8 @@ async function shareResult(){
  let imageDownloaded=false;
  if(practiceMode){
    try{
-     feedback.textContent='Preparing solved-code image…';
-     const blob=await createPracticeSolutionImage();
+     const blob=preparedPracticeResultBlob;
+     if(!blob)throw new Error('Solved-code image unavailable');
      const file=new File([blob],'CodeTest2-Advanced-No-Repeats-Random.png',{type:'image/png'});
      if(navigator.share&&navigator.canShare?.({files:[file]})){
        try{await navigator.share({title:`CodeTest2 — ${DAILY_LABEL} Random`,text:resultToShare,files:[file]});feedback.textContent='Result shared with the solved-code image.';return;}
