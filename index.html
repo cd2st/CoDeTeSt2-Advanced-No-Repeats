@@ -473,7 +473,8 @@ async function shareResult(){
      const blob=preparedPracticeResultBlob;
      if(!blob)throw new Error('Solved-code image unavailable');
      const file=new File([blob],'CodeTest2-Advanced-No-Repeats-Random.png',{type:'image/png'});
-     if(navigator.share&&navigator.canShare?.({files:[file]})){
+     const mobileFileSharing=navigator.userAgentData?.mobile===true||/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
+     if(mobileFileSharing&&navigator.share&&navigator.canShare?.({files:[file]})){
        try{await navigator.share({title:`CodeTest2 — ${DAILY_LABEL} Random`,text:resultToShare,files:[file]});feedback.textContent='Result shared with the solved-code image.';return;}
        catch(error){if(error?.name==='AbortError'){feedback.textContent='Sharing canceled.';return;}}
      }
