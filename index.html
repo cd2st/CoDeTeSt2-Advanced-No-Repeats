@@ -507,8 +507,7 @@ async function shareResult(){
    try{
      const blob=preparedPracticeResultBlob;
      const file=new File([blob],practiceMode?'CodeTest2-Advanced-No-Repeats-Random.png':'CodeTest2-Advanced-No-Repeats-Daily.png',{type:'image/png'});
-     const mobileFileSharing=navigator.userAgentData?.mobile===true||/Android|iPhone|iPad|iPod/i.test(navigator.userAgent);
-     if(!mobileFileSharing){openDesktopSharePanel(blob,file.name,resultToShare);return;}
+     openDesktopSharePanel(blob,file.name,resultToShare);return;
      if(navigator.share&&navigator.canShare?.({files:[file]})){
        try{await navigator.share({title:`CodeTest2 — ${DAILY_LABEL} ${practiceMode?'Random':'Daily'}`,text:dailyResultText,url:shareUrl,files:[file]});feedback.textContent='Result image and clickable game link shared.';return;}
        catch(error){if(error?.name==='AbortError'){feedback.textContent='Sharing canceled.';return;}}
