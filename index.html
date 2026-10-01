@@ -331,7 +331,7 @@ let preparedPracticeResultBlob=null,practiceResultImagePromise=null;
 const headerLogoSrc=document.querySelector('.pause-logo').src;
 const headerTitle=(version,detail='')=>`<img class="header-logo" src="${headerLogoSrc}" alt="CodeTest2"><span class="header-version">${version}${detail?`<span class="header-detail">${detail}</span>`:''}</span>`;
 const dailyHeading=headerTitle('ADVANCED','colors/shapes may not repeat');
-const practiceHeading=headerTitle('ADVANCED PRACTICE','colors/shapes may not repeat');
+const practiceHeading=headerTitle('ADVANCED','colors/shapes may not repeat');
 document.querySelector('.title').innerHTML=dailyHeading;
 const againButton=document.getElementById('againBtn'),shareButton=document.getElementById('shareBtn'),backToPuzzleButton=document.getElementById('backToPuzzleBtn');
 backToPuzzleButton.onclick=()=>document.getElementById('modal').classList.remove('show');
@@ -343,18 +343,25 @@ function dailyStorageKey(dateKey){return `CoDeTeSt2.daily.${DAILY_MODE}.${dateKe
 function loadDailySnapshot(dateKey){try{return JSON.parse(localStorage.getItem(dailyStorageKey(dateKey))||'null');}catch(error){return null;}}
 function saveDailySnapshot(dateKey,snapshot){try{localStorage.setItem(dailyStorageKey(dateKey),JSON.stringify(snapshot));}catch(error){}}
 const progressStorageKey=`CoDeTeSt2.progress.${DAILY_MODE}.v1`;
-function clearProgress(){try{localStorage.removeItem(progressStorageKey);}catch(error){}}
+const randomProgressStorageKey=`CoDeTeSt2.random.${DAILY_MODE}.v2`;
+function clearDailyProgress(){try{localStorage.removeItem(progressStorageKey);}catch(error){}}
+function clearRandomProgress(){try{localStorage.removeItem(randomProgressStorageKey);}catch(error){}}
 function saveProgress(){
  if(gameOver||!secret.length)return;
- try{localStorage.setItem(progressStorageKey,JSON.stringify({version:1,activeDailyDate,practiceMode,secret,guesses,current,selectedSlot,undoStack,redoStack,clockStarted,elapsedMs:elapsedMilliseconds()}));}catch(error){}
+ try{localStorage.setItem(practiceMode?randomProgressStorageKey:progressStorageKey,JSON.stringify({version:2,activeDailyDate,practiceMode,secret,guesses,current,selectedSlot,undoStack,redoStack,clockStarted,completed:false,elapsedMs:elapsedMilliseconds()}));}catch(error){}
 }
-function restoreProgress(){
- let saved=null;try{saved=JSON.parse(localStorage.getItem(progressStorageKey)||'null');}catch(error){clearProgress();}
- if(!saved||saved.version!==1||!Array.isArray(saved.secret)||saved.secret.length!==4)return false;
- if(!saved.practiceMode&&saved.activeDailyDate!==dailyDateKey()){clearProgress();return false;}
+function restoreProgress(targetMode){
+ const restoringRandom=targetMode==='random',targetKey=restoringRandom?randomProgressStorageKey:progressStorageKey;
+ let saved=null;try{saved=JSON.parse(localStorage.getItem(targetKey)||'null');}catch(error){restoringRandom?clearRandomProgress():clearDailyProgress();}
+ if(!restoringRandom&&saved?.practiceMode){try{localStorage.setItem(randomProgressStorageKey,JSON.stringify(saved));localStorage.removeItem(progressStorageKey);}catch(error){}return false;}
+ if(restoringRandom&&!saved){try{const legacy=JSON.parse(localStorage.getItem(progressStorageKey)||'null');if(legacy?.practiceMode){saved=legacy;localStorage.setItem(randomProgressStorageKey,JSON.stringify(legacy));localStorage.removeItem(progressStorageKey);}}catch(error){}}
+ if(!saved||![1,2].includes(saved.version)||!Array.isArray(saved.secret)||saved.secret.length!==4)return false;
+ if(restoringRandom!==!!saved.practiceMode)return false;
+ if(!restoringRandom&&saved.activeDailyDate!==dailyDateKey()){clearDailyProgress();return false;}
  practiceMode=!!saved.practiceMode;activeDailyDate=saved.activeDailyDate||dailyDateKey();secret=saved.secret;guesses=Array.isArray(saved.guesses)?saved.guesses:[];current=Array.isArray(saved.current)&&saved.current.length===4?saved.current:Array(4).fill(null);selectedSlot=Number.isInteger(saved.selectedSlot)?saved.selectedSlot:null;undoStack=Array.isArray(saved.undoStack)?saved.undoStack:[];redoStack=Array.isArray(saved.redoStack)?saved.redoStack:[];clockStarted=guesses.length>0||current.some(Boolean)||undoStack.length>0||redoStack.length>0;
- document.querySelector('.title').innerHTML=practiceMode?practiceHeading:dailyHeading;shareButton.hidden=practiceMode;returnDailyButton.hidden=!practiceMode;againButton.textContent=practiceMode?'PLAY ANOTHER RANDOM':'PLAY RANDOM PUZZLE';document.getElementById('modal').classList.remove('show');
+ document.querySelector('.title').innerHTML=practiceMode?practiceHeading:dailyHeading;shareButton.hidden=practiceMode&&!saved.completed;returnDailyButton.hidden=true;againButton.textContent=practiceMode?'PLAY ANOTHER RANDOM':'PLAY RANDOM PUZZLE';document.getElementById('modal').classList.remove('show');
  startedAt=clockStarted?Date.now()-Math.max(0,Number(saved.elapsedMs)||0):0;totalPausedMs=0;gameOver=false;pauseButton.disabled=false;
+ if(restoringRandom&&saved.completed){clockStarted=true;pausedAt=0;startedAt=Date.now()-Math.max(0,Number(saved.elapsedMs)||0);render();endGame(!!saved.win);status.textContent='Completed random puzzle restored.';return true;}
  let immediateResume=false;try{immediateResume=Number(sessionStorage.getItem(resumeGuardStorageKey)||0)>Date.now();sessionStorage.removeItem(resumeGuardStorageKey);}catch(error){}
  if(!clockStarted){pausedAt=0;pauseOverlay.hidden=true;document.body.classList.remove('game-paused');}else if(immediateResume){pausedAt=0;pauseOverlay.hidden=true;document.body.classList.remove('game-paused');ignorePauseUntil=Date.now()+1000;}else{pausedAt=Date.now();pauseOverlay.hidden=false;document.body.classList.add('game-paused');}
  render();status.textContent=!clockStarted?'Ready when you are—the clock starts with your first action.':immediateResume?'Game restored.':'Game restored. Press RESUME when you are ready.';return true;
@@ -401,8 +408,8 @@ function newGame(){
  activeDailyDate=dailyDateKey();
  
  secret=dailySolution(activeDailyDate);guesses=[];current=Array(4).fill(null);selectedSlot=null;undoStack=[];redoStack=[];document.getElementById('modal').classList.remove('show');shareButton.hidden=false;shareButton.disabled=false;returnDailyButton.hidden=true;againButton.textContent='PLAY RANDOM PUZZLE';render();
- const savedSnapshot=loadDailySnapshot(activeDailyDate);if(savedSnapshot){clearProgress();dailySnapshot=savedSnapshot;dailyResultText=savedSnapshot.resultText;returnToDailyResult();status.textContent='Today’s challenge is already complete in this browser. Review it or play a random puzzle.';return;}
- if(restoreProgress())return;
+ const savedSnapshot=loadDailySnapshot(activeDailyDate);if(savedSnapshot){clearDailyProgress();dailySnapshot=savedSnapshot;dailyResultText=savedSnapshot.resultText;returnToDailyResult();status.textContent='Today’s challenge is already complete in this browser. Review it or play a random puzzle.';return;}
+ if(restoreProgress('daily'))return;
  status.textContent='Click a guess box, then choose a piece from the pool.';
 }
 function randomPracticeSolution(){
@@ -412,13 +419,13 @@ function randomPracticeSolution(){
  }
  return Array.from({length:4},()=>pieces[Math.floor(Math.random()*pieces.length)]);
 }
-function startPracticeGame(){
- clearProgress();
+function startPracticeGame(resumeExisting){
+ if(resumeExisting===true&&restoreProgress('random'))return;
+ clearRandomProgress();
  preparedPracticeResultBlob=null;practiceResultImagePromise=null;
- practiceMode=true;document.querySelector('.title').innerHTML=practiceHeading;startedAt=0;clockStarted=false;resetPause();secret=randomPracticeSolution();guesses=[];current=Array(4).fill(null);selectedSlot=null;undoStack=[];redoStack=[];document.getElementById('modal').classList.remove('show');shareButton.hidden=true;returnDailyButton.hidden=false;againButton.textContent='PLAY ANOTHER RANDOM';render();status.textContent='Practice game: click a guess box, then choose a piece from the pool.';
+ practiceMode=true;activeDailyDate=dailyDateKey();document.querySelector('.title').innerHTML=practiceHeading;startedAt=0;clockStarted=false;resetPause();secret=randomPracticeSolution();guesses=[];current=Array(4).fill(null);selectedSlot=null;undoStack=[];redoStack=[];document.getElementById('modal').classList.remove('show');shareButton.hidden=true;returnDailyButton.hidden=true;againButton.textContent='PLAY ANOTHER RANDOM';render();status.textContent='Random puzzle: click a guess box, then choose a piece from the pool.';
 }
 function returnToDailyResult(){
- clearProgress();
  if(!dailySnapshot){newGame();return;}
  practiceMode=false;document.querySelector('.title').innerHTML=dailyHeading;secret=[...dailySnapshot.secret];guesses=dailySnapshot.guesses.map(row=>({g:[...row.g],fb:row.fb}));current=Array(4).fill(null);selectedSlot=null;undoStack=[];redoStack=[];render();
  const modal=document.getElementById('modal'),code=document.getElementById('code');code.innerHTML='';secret.forEach(piece=>code.appendChild(makeShape(piece)));document.getElementById('elapsedTime').textContent='Time: '+dailySnapshot.elapsed;document.getElementById('result').textContent=dailySnapshot.win?'CODE CRACKED!':'OUT OF GUESSES';document.getElementById('resultText').textContent=dailySnapshot.win?`You solved it in ${guesses.length} round${guesses.length===1?'':'s'}.`:'The hidden code was:';dailyResultText=dailySnapshot.resultText;shareButton.hidden=false;returnDailyButton.hidden=true;againButton.textContent='PLAY RANDOM PUZZLE';gameOver=true;pauseButton.disabled=true;modal.classList.add('show');prepareResultImage(createDailyResultImage,'Preparing the share-safe daily result image…');
@@ -429,16 +436,17 @@ function prepareResultImage(factory,message){
  imagePromise.then(blob=>{if(practiceResultImagePromise!==imagePromise)return null;preparedPracticeResultBlob=blob;shareButton.disabled=false;document.getElementById('shareStatus').textContent='Result image ready to share.';return blob;}).catch(()=>{if(practiceResultImagePromise!==imagePromise)return null;preparedPracticeResultBlob=null;shareButton.disabled=false;document.getElementById('shareStatus').textContent='The written result is ready; the result image could not be prepared.';return null;});
 }
 function endGame(win){
- clearProgress();
  const modal=document.getElementById('modal'),code=document.getElementById('code');code.innerHTML='';secret.forEach(p=>code.appendChild(makeShape(p)));
  gameOver=true;pauseButton.disabled=true;
  const elapsed=formatElapsed(elapsedMilliseconds());
  document.getElementById('elapsedTime').textContent='Time: '+elapsed;
  if(practiceMode){
-   dailyResultText=`CodeTest2 — ${DAILY_LABEL} Random\n${displayDailyDate(dailyDateKey())}\n${win?`Solved in ${guesses.length}/6 guesses`:'Not solved in 6 guesses'}\nTime: ${elapsed}`;
-   shareButton.hidden=false;returnDailyButton.hidden=false;againButton.textContent='PLAY ANOTHER RANDOM';
+   dailyResultText=`CodeTest2 — ${DAILY_LABEL} Random\n${displayDailyDate(activeDailyDate||dailyDateKey())}\n${win?`Solved in ${guesses.length}/6 guesses`:'Not solved in 6 guesses'}\nTime: ${elapsed}`;
+   shareButton.hidden=false;returnDailyButton.hidden=true;againButton.textContent='PLAY ANOTHER RANDOM';
    prepareResultImage(createPracticeSolutionImage,'Preparing the completed-puzzle image…');
+   try{localStorage.setItem(randomProgressStorageKey,JSON.stringify({version:2,completed:true,win,activeDailyDate:activeDailyDate||dailyDateKey(),practiceMode:true,secret,guesses,current:Array(4).fill(null),selectedSlot:null,undoStack:[],redoStack:[],clockStarted:true,elapsedMs:elapsedMilliseconds()}));}catch(error){}
  }else{
+   clearDailyProgress();
    preparedPracticeResultBlob=null;practiceResultImagePromise=null;shareButton.disabled=false;
    dailyResultText=`CodeTest2 — ${DAILY_LABEL} Daily\n${displayDailyDate(activeDailyDate)}\n${win?`Solved in ${guesses.length}/6 guesses`:'Not solved in 6 guesses'}\nTime: ${elapsed}`;
    dailySnapshot={win,elapsed,resultText:dailyResultText,secret:[...secret],guesses:guesses.map(row=>({g:[...row.g],fb:row.fb}))};saveDailySnapshot(activeDailyDate,dailySnapshot);shareButton.hidden=false;returnDailyButton.hidden=true;againButton.textContent='PLAY RANDOM PUZZLE';prepareResultImage(createDailyResultImage,'Preparing the share-safe daily result image…');
@@ -532,7 +540,7 @@ async function shareResult(){
  feedback.textContent='Select and copy the result below:';
 }
 function formatElapsed(milliseconds){const totalSeconds=Math.floor(milliseconds/1000),hours=Math.floor(totalSeconds/3600),minutes=Math.floor((totalSeconds%3600)/60),seconds=totalSeconds%60,unit=(value,name)=>`${value} ${name}${value===1?'':'s'}`;return `${unit(hours,'hour')}, ${unit(minutes,'minute')}, ${unit(seconds,'second')}`;}
-document.getElementById('submitBtn').onclick=submit;document.getElementById('undoBtn').onclick=undoGuess;document.getElementById('redoBtn').onclick=redoGuess;document.getElementById('clearBtn').onclick=clearGuess;againButton.onclick=startPracticeGame;shareButton.onclick=shareResult;returnDailyButton.onclick=returnToDailyResult;pauseButton.onclick=pauseGame;resumeButton.onclick=resumeGame;renderPool();newGame();setInterval(checkDailyRollover,1000);setInterval(saveProgress,1000);window.addEventListener('pagehide',saveProgress);board.addEventListener('pointerdown',startClockOnActivity,true);board.addEventListener('keydown',startClockOnActivity,true);tiles.addEventListener('pointerdown',startClockOnActivity,true);tiles.addEventListener('keydown',startClockOnActivity,true);document.addEventListener('visibilitychange',()=>{if(document.hidden)saveProgress();else checkDailyRollover();});
+document.getElementById('submitBtn').onclick=submit;document.getElementById('undoBtn').onclick=undoGuess;document.getElementById('redoBtn').onclick=redoGuess;document.getElementById('clearBtn').onclick=clearGuess;againButton.onclick=startPracticeGame;shareButton.onclick=shareResult;returnDailyButton.onclick=returnToDailyResult;pauseButton.onclick=pauseGame;resumeButton.onclick=resumeGame;renderPool();const requestedGameMode=new URLSearchParams(location.search).get('mode');requestedGameMode==='random'?startPracticeGame(true):newGame();setInterval(checkDailyRollover,1000);setInterval(saveProgress,1000);window.addEventListener('pagehide',saveProgress);board.addEventListener('pointerdown',startClockOnActivity,true);board.addEventListener('keydown',startClockOnActivity,true);tiles.addEventListener('pointerdown',startClockOnActivity,true);tiles.addEventListener('keydown',startClockOnActivity,true);document.addEventListener('visibilitychange',()=>{if(document.hidden)saveProgress();else checkDailyRollover();});
 </script>
 </body>
 </html>
