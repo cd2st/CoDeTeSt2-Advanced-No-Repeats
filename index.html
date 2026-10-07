@@ -481,7 +481,7 @@ function newGame(){
  activeDailyDate=dailyDateKey();
  
  secret=dailySolution(activeDailyDate);guesses=[];current=Array(4).fill(null);selectedSlot=null;undoStack=[];redoStack=[];document.getElementById('modal').classList.remove('show');shareButton.hidden=false;shareButton.disabled=false;returnDailyButton.hidden=true;againButton.textContent='PLAY RANDOM PUZZLE';render();
- const savedSnapshot=loadDailySnapshot(activeDailyDate);if(savedSnapshot){clearDailyProgress();dailySnapshot=savedSnapshot;dailyResultText=savedSnapshot.resultText.replace(/\nNotes Mode: Not used/g,'').replace(/Notes Mode: Used/g,'Notes Mode Used');returnToDailyResult();status.textContent='Today’s challenge is already complete in this browser. Review it or play a random puzzle.';return;}
+ const savedSnapshot=loadDailySnapshot(activeDailyDate);if(savedSnapshot){clearDailyProgress();dailySnapshot=savedSnapshot;dailyResultText=normalizeResultTime(savedSnapshot.resultText).replace(/\nNotes Mode: Not used/g,'').replace(/Notes Mode: Used/g,'Notes Mode Used');returnToDailyResult();status.textContent='Today’s challenge is already complete in this browser. Review it or play a random puzzle.';return;}
  if(restoreProgress('daily'))return;
  status.textContent='Click a guess box, then choose a piece from the pool.';
 }
@@ -501,7 +501,7 @@ function startPracticeGame(resumeExisting){
 function returnToDailyResult(){
  if(!dailySnapshot){newGame();return;}
  practiceMode=false;document.querySelector('.title').innerHTML=dailyHeading;secret=[...dailySnapshot.secret];guesses=dailySnapshot.guesses.map(row=>({g:[...row.g],fb:row.fb}));current=Array(4).fill(null);selectedSlot=null;undoStack=[];redoStack=[];render();
- const modal=document.getElementById('modal'),code=document.getElementById('code');code.innerHTML='';secret.forEach(piece=>code.appendChild(makeShape(piece)));document.getElementById('elapsedTime').textContent='Time: '+dailySnapshot.elapsed;document.getElementById('result').textContent=dailySnapshot.win?'CODE CRACKED!':'OUT OF GUESSES';document.getElementById('resultText').textContent=dailySnapshot.win?`You solved it in ${guesses.length} round${guesses.length===1?'':'s'}.`:'The hidden code was:';dailyResultText=dailySnapshot.resultText.replace(/\nNotes Mode: Not used/g,'').replace(/Notes Mode: Used/g,'Notes Mode Used');shareButton.hidden=false;returnDailyButton.hidden=true;againButton.textContent='PLAY RANDOM PUZZLE';gameOver=true;pauseButton.disabled=true;modal.classList.add('show');prepareResultImage(createDailyResultImage,'Preparing the share-safe daily result image…');
+ const modal=document.getElementById('modal'),code=document.getElementById('code');code.innerHTML='';secret.forEach(piece=>code.appendChild(makeShape(piece)));document.getElementById('elapsedTime').textContent='Time: '+normalizeResultTime(dailySnapshot.elapsed);document.getElementById('result').textContent=dailySnapshot.win?'CODE CRACKED!':'OUT OF GUESSES';document.getElementById('resultText').textContent=dailySnapshot.win?`You solved it in ${guesses.length} round${guesses.length===1?'':'s'}.`:'The hidden code was:';dailyResultText=normalizeResultTime(dailySnapshot.resultText).replace(/\nNotes Mode: Not used/g,'').replace(/Notes Mode: Used/g,'Notes Mode Used');shareButton.hidden=false;returnDailyButton.hidden=true;againButton.textContent='PLAY RANDOM PUZZLE';gameOver=true;pauseButton.disabled=true;modal.classList.add('show');prepareResultImage(createDailyResultImage,'Preparing the share-safe daily result image…');
 }
 function prepareResultImage(factory,message){
  shareButton.disabled=true;document.getElementById('shareStatus').textContent=message;
@@ -619,7 +619,8 @@ async function shareResult(){
  fallback.textContent=resultToShare;fallback.hidden=false;
  feedback.textContent='Select and copy the result below:';
 }
-function formatElapsed(milliseconds){const totalSeconds=Math.floor(milliseconds/1000),hours=Math.floor(totalSeconds/3600),minutes=Math.floor((totalSeconds%3600)/60),seconds=totalSeconds%60,unit=(value,name)=>`${value} ${name}${value===1?'':'s'}`;return `${unit(hours,'hour')}, ${unit(minutes,'minute')}, ${unit(seconds,'second')}`;}
+function formatElapsed(milliseconds){const totalSeconds=Math.floor(milliseconds/1000),minutes=Math.floor(totalSeconds/60),seconds=totalSeconds%60,unit=(value,name)=>`${value} ${name}${value===1?'':'s'}`;return `${unit(minutes,'minute')}, ${unit(seconds,'second')}`;}
+function normalizeResultTime(text){return String(text).replace(/(\d+) hours?, (\d+) minutes?, (\d+) seconds?/g,(_,h,m,s)=>formatElapsed((Number(h)*3600+Number(m)*60+Number(s))*1000));}
 function showGameModeChooser(startDaily,startRandom){
  const overlay=document.createElement('div');overlay.setAttribute('role','dialog');overlay.setAttribute('aria-modal','true');overlay.setAttribute('aria-label','Choose a puzzle');overlay.style.cssText='position:fixed;inset:0;z-index:12000;background:rgba(2,7,14,.88);display:flex;align-items:center;justify-content:center;padding:20px';
  const card=document.createElement('div');card.style.cssText='width:min(410px,100%);background:#111e31;color:#eef4ff;border:2px solid #5e789c;border-radius:18px;padding:24px;box-shadow:0 20px 60px rgba(0,0,0,.6);text-align:center;font-family:system-ui';card.innerHTML='<h2 style="margin:0 0 8px;font-size:24px">CHOOSE YOUR PUZZLE</h2><p style="margin:0 0 18px;color:#c6d5e8">Play today’s shared challenge or continue your saved random puzzle.</p><div data-actions style="display:grid;gap:10px"></div>';
