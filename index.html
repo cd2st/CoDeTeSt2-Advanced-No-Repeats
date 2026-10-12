@@ -153,6 +153,8 @@ html,body{height:100%;overflow:hidden}body{height:100dvh;display:flex;align-item
  .round-block{grid-template-columns:24px repeat(4,minmax(0,1fr)) 4px repeat(3,minmax(39px,calc(34vw / 3)))}
  .feedback-stack .label-row{font-size:9px}
 }
+
+.stats-modal{z-index:11000}.stats-record{background:#0b1524;border:1px solid #3a4d6a;border-radius:9px;padding:12px;margin:10px 0}.stats-record>b{color:#eef4ff;font-size:13px}.stats-record table{width:100%;border-collapse:collapse;margin-top:8px;font-size:12px;color:#c6d5e8}.stats-record th{font-weight:600;text-align:left;width:35%;padding:7px 6px 7px 0}.stats-record td{padding:7px 0}.stats-footnote{font-size:11px!important}.stats-result-button{margin:5px}.topbar .stats-button{flex:0 0 auto}@media(max-width:850px){.topbar{grid-template-columns:repeat(3,minmax(0,1fr))}.topbar .title{grid-column:1/-1}.topbar .pause-button,.topbar .instructions-button{grid-column:auto;text-align:center;width:100%}}
 </style>
 <style>.example-piece{width:34px;height:34px;background:#2787ff}
 .example-piece.circle{border-radius:50%}.example-piece.square{border-radius:10%}.example-piece.diamond{transform:rotate(45deg);width:25px;height:25px;margin:4px}.example-piece.triangle{clip-path:polygon(50% 0,100% 100%,0 100%);background:#ef4545}
@@ -231,6 +233,25 @@ const CODE_LENGTH = 4;
 const MAX_GUESSES = 6;
 const DAILY_TIME_ZONE = 'America/Chicago';
 const UNDO_HISTORY_LIMIT = 50;
+const BROWSER_STATS_KEY='CoDeTeSt2.stats.no-repeats.v1';
+const BROWSER_STATS_GROUPS=[['daily','Daily'],['random','Random']];
+// Personal records are local to this browser and this game version.
+let statsAttemptId=null,statsRestoringResult=false;
+let browserStatsKind=()=> 'daily',browserStatsSave=()=>{};
+let statsMemory={version:1,attempts:{}},statsStorageAvailable=true;
+function loadBrowserStats(){try{const saved=JSON.parse(localStorage.getItem(BROWSER_STATS_KEY)||'null');if(saved?.version===1&&saved.attempts&&typeof saved.attempts==='object'&&!Array.isArray(saved.attempts))return saved;}catch(e){statsStorageAvailable=false;}return statsMemory;}
+function saveBrowserStats(data){statsMemory=data;try{localStorage.setItem(BROWSER_STATS_KEY,JSON.stringify(data));}catch(e){statsStorageAvailable=false;}}
+function statsStarted(data,id,kind){if(!data.attempts[id])data.attempts[id]={kind,finished:false};return data;}
+function statsFinished(data,id,kind,win,rounds,elapsed,used){statsStarted(data,id,kind);if(data.attempts[id].finished)return data;data.attempts[id]={kind,finished:true,win:!!win,rounds,elapsed,used:!!used};return data;}
+function statsSummary(data,kind,used){const all=Object.values(data.attempts).filter(a=>a&&a.kind===kind),solved=all.filter(a=>a.finished&&a.win&&a.used===used&&Number.isFinite(a.elapsed)&&a.elapsed>=0&&Number.isInteger(a.rounds)&&a.rounds>0);return {played:all.length,solved:all.filter(a=>a.finished&&a.win).length,fastest:[...solved].sort((a,b)=>a.elapsed-b.elapsed||a.rounds-b.rounds)[0]||null,fewest:[...solved].sort((a,b)=>a.rounds-b.rounds||a.elapsed-b.elapsed)[0]||null};}
+function ensureStatsAttemptId(){if(!statsAttemptId)statsAttemptId=globalThis.crypto?.randomUUID?.()||Date.now().toString(36)+'-'+Math.random().toString(36).slice(2);return statsAttemptId;}
+function markBrowserStatsStarted(){saveBrowserStats(statsStarted(loadBrowserStats(),ensureStatsAttemptId(),browserStatsKind()));browserStatsSave();}
+function recordBrowserStats(win){if(statsRestoringResult){statsRestoringResult=false;return;}saveBrowserStats(statsFinished(loadBrowserStats(),ensureStatsAttemptId(),browserStatsKind(),win,guesses.length,Math.floor(elapsedMilliseconds()),notesUsed));}
+let statsDialog=null,statsOwnedPause=false,statsReturnFocus=null;
+function closeBrowserStats(){if(!statsDialog)return;statsDialog.remove();statsDialog=null;if(statsOwnedPause){totalPausedMs+=Date.now()-pausedAt;pausedAt=0;statsOwnedPause=false;}if(!pausedAt&&instructionsModal.hidden)document.body.classList.remove('game-paused');statsReturnFocus?.focus();}
+function openBrowserStats(event){if(statsDialog)return;statsReturnFocus=event?.currentTarget||document.getElementById('myStatsBtn');statsOwnedPause=!gameOver&&clockStarted&&!pausedAt;if(statsOwnedPause)pausedAt=Date.now();document.body.classList.add('game-paused');const overlay=document.createElement('div');overlay.className='instructions-modal stats-modal';overlay.setAttribute('role','dialog');overlay.setAttribute('aria-modal','true');overlay.setAttribute('aria-labelledby','myStatsTitle');const card=document.createElement('div');card.className='instructions-card';const title=document.createElement('h2');title.id='myStatsTitle';title.textContent='MY STATS';card.appendChild(title);const data=loadBrowserStats();for(const [kind,label] of BROWSER_STATS_GROUPS){const heading=document.createElement('h3');heading.textContent=label;card.appendChild(heading);const total=statsSummary(data,kind,false),counts=document.createElement('p');counts.textContent=`Games played: ${total.played} · Games solved: ${total.solved}`;card.appendChild(counts);for(const used of [false,true]){const summary=statsSummary(data,kind,used),section=document.createElement('div');section.className='stats-record';const sub=document.createElement('b');sub.textContent=used?'Notes Mode Used':'Without Notes Mode';section.appendChild(sub);const table=document.createElement('table');for(const [label,record] of [['Fastest solve',summary.fastest],['Fewest rounds',summary.fewest]]){const row=document.createElement('tr'),th=document.createElement('th'),td=document.createElement('td');th.scope='row';th.textContent=label;td.textContent=record?`${formatElapsed(record.elapsed)} · ${record.rounds} round${record.rounds===1?'':'s'}`:'No solves yet';row.appendChild(th);row.appendChild(td);table.appendChild(row);}section.appendChild(table);card.appendChild(section);}}const note=document.createElement('p');note.className='stats-footnote';note.textContent=statsStorageAvailable?'Saved in this browser. Tracking starts with this update.':'This browser is blocking storage. These stats may not survive closing the page.';card.appendChild(note);const close=document.createElement('button');close.type='button';close.className='new';close.textContent='CLOSE';close.onclick=closeBrowserStats;card.appendChild(close);overlay.appendChild(card);statsDialog=overlay;document.body.appendChild(overlay);overlay.addEventListener('click',e=>{if(e.target===overlay)closeBrowserStats();});close.focus();}
+function installBrowserStats(){const toolbar=document.createElement('button');toolbar.id='myStatsBtn';toolbar.type='button';toolbar.className='instructions-button stats-button';toolbar.textContent='MY STATS';toolbar.onclick=openBrowserStats;document.querySelector('.topbar').appendChild(toolbar);const result=document.createElement('button');result.type='button';result.className='new stats-result-button';result.textContent='MY STATS';result.onclick=openBrowserStats;document.getElementById('backToPuzzleBtn').insertAdjacentElement('afterend',result);document.addEventListener('keydown',e=>{if(statsDialog&&e.key==='Escape'){e.preventDefault();e.stopImmediatePropagation();closeBrowserStats();}},true);}
+
 
 let completionTimestamp=null,restoredCompletionTimestamp;
 function completionLine(){
@@ -285,8 +306,8 @@ const instructionsModal=document.createElement('div');instructionsModal.id='inst
 <h3>Elimination notes</h3><p>Turn on <b>Notes Mode</b> to mark possibilities as excluded. Tap a colored shape to exclude only that combo, a gray shape to exclude that shape in every color, or a solid color box to exclude that color in every shape. Tap again to restore it. You may still drag an excluded item into your current guess; it will appear gray with a red slash as a reminder.</p><h3>Shared challenge and timing</h3><p>${noRepeatsGame?'The hidden code never repeats a shape or a color.':'The hidden code may repeat shapes, colors, both, or neither.'}${isDailyGame?' A new shared challenge begins each day at midnight Central Time.':''} Pause or open these instructions whenever needed; that time is excluded from your solve time.</p><p class="ip-notice"><strong>CodeTest2™ © 2026 Brian Dunbar. All rights reserved.</strong><br>The original interface, artwork, written content, and source code may not be reproduced or distributed without permission.</p></div>`;document.body.insertBefore(instructionsModal,pauseOverlay);
 const closeInstructionsButton=document.getElementById('closeInstructionsBtn');let instructionsPausedGame=false;let ignorePauseUntil=0;const resumeGuardStorageKey='CoDeTeSt2.resume.noRepeat.v1';
 function elapsedMilliseconds(){return clockStarted?Math.max(0,(pausedAt||Date.now())-startedAt-totalPausedMs):0;}
-function startClockOnActivity(){if(clockStarted||gameOver||!secret.length)return;clockStarted=true;startedAt=Date.now();pausedAt=0;totalPausedMs=0;}
-function resetPause(){pausedAt=0;totalPausedMs=0;gameOver=false;pauseOverlay.hidden=true;instructionsModal.hidden=true;instructionsPausedGame=false;document.body.classList.remove('game-paused');pauseButton.disabled=false;}
+function startClockOnActivity(){if(clockStarted||gameOver||!secret.length)return;clockStarted=true;startedAt=Date.now();pausedAt=0;totalPausedMs=0;markBrowserStatsStarted();}
+function resetPause(){statsAttemptId=null;statsRestoringResult=false;pausedAt=0;totalPausedMs=0;gameOver=false;pauseOverlay.hidden=true;instructionsModal.hidden=true;instructionsPausedGame=false;document.body.classList.remove('game-paused');pauseButton.disabled=false;}
 function pauseGame(){if(gameOver||pausedAt||Date.now()<ignorePauseUntil)return;pausedAt=Date.now();pauseOverlay.hidden=false;document.body.classList.add('game-paused');resumeButton.focus();}
 function resumeGame(){if(!pausedAt)return;const now=Date.now();totalPausedMs+=now-pausedAt;pausedAt=0;pauseOverlay.hidden=true;document.body.classList.remove('game-paused');ignorePauseUntil=now+1500;try{sessionStorage.setItem(resumeGuardStorageKey,String(now+5000));}catch(error){}resumeButton.blur();}
 function openInstructions(){if(!instructionsModal.hidden)return;instructionsPausedGame=!gameOver&&!pausedAt;if(instructionsPausedGame)pausedAt=Date.now();instructionsModal.hidden=false;document.body.classList.add('game-paused');closeInstructionsButton.focus();}
@@ -450,6 +471,7 @@ function displayDailyDate(dateKey){const [year,month,day]=dateKey.split('-');ret
 function dailyStorageKey(dateKey){return `CoDeTeSt2.daily.${DAILY_MODE}.${dateKey}`;}
 function loadDailySnapshot(dateKey){try{return JSON.parse(localStorage.getItem(dailyStorageKey(dateKey))||'null');}catch(error){return null;}}
 function saveDailySnapshot(dateKey,snapshot){try{localStorage.setItem(dailyStorageKey(dateKey),JSON.stringify(snapshot));}catch(error){}}
+browserStatsKind=()=>practiceMode?'random':'daily';browserStatsSave=()=>saveProgress();
 const progressStorageKey=`CoDeTeSt2.progress.${DAILY_MODE}.v1`;
 const randomProgressStorageKey=`CoDeTeSt2.random.${DAILY_MODE}.v2`;
 function clearDailyProgress(){try{localStorage.removeItem(progressStorageKey);}catch(error){}}
@@ -457,7 +479,7 @@ function clearRandomProgress(){try{localStorage.removeItem(randomProgressStorage
 function saveProgress(){
  try{localStorage.setItem(progressStorageKey+".lastMode",practiceMode?"random":"daily");}catch(e){}
  if(gameOver||!secret.length)return;
- try{localStorage.setItem(practiceMode?randomProgressStorageKey:progressStorageKey,JSON.stringify({version:2,activeDailyDate,practiceMode,secret,guesses,current,selectedSlot,undoStack,redoStack,clockStarted,completed:false,elapsedMs:elapsedMilliseconds()}));}catch(error){}
+ try{localStorage.setItem(practiceMode?randomProgressStorageKey:progressStorageKey,JSON.stringify({version:2,statsAttemptId:ensureStatsAttemptId(),activeDailyDate,practiceMode,secret,guesses,current,selectedSlot,undoStack,redoStack,clockStarted,completed:false,elapsedMs:elapsedMilliseconds()}));}catch(error){}
 }
 function restoreProgress(targetMode){
  const restoringRandom=targetMode==='random',targetKey=restoringRandom?randomProgressStorageKey:progressStorageKey;
@@ -467,7 +489,7 @@ function restoreProgress(targetMode){
  if(!saved||![1,2].includes(saved.version)||!Array.isArray(saved.secret)||saved.secret.length!==CODE_LENGTH)return false;
  if(restoringRandom!==!!saved.practiceMode)return false;
  if(!restoringRandom&&saved.activeDailyDate!==dailyDateKey()){clearDailyProgress();return false;}
- practiceMode=!!saved.practiceMode;activeDailyDate=saved.activeDailyDate||dailyDateKey();secret=saved.secret;guesses=Array.isArray(saved.guesses)?saved.guesses:[];current=Array.isArray(saved.current)&&saved.current.length===CODE_LENGTH?saved.current:Array(CODE_LENGTH).fill(null);selectedSlot=Number.isInteger(saved.selectedSlot)?saved.selectedSlot:null;undoStack=Array.isArray(saved.undoStack)?saved.undoStack:[];redoStack=Array.isArray(saved.redoStack)?saved.redoStack:[];clockStarted=guesses.length>0||current.some(Boolean)||undoStack.length>0||redoStack.length>0;
+ practiceMode=!!saved.practiceMode;activeDailyDate=saved.activeDailyDate||dailyDateKey();secret=saved.secret;statsAttemptId=saved.statsAttemptId||null;statsRestoringResult=!!saved.completed;guesses=Array.isArray(saved.guesses)?saved.guesses:[];current=Array.isArray(saved.current)&&saved.current.length===CODE_LENGTH?saved.current:Array(CODE_LENGTH).fill(null);selectedSlot=Number.isInteger(saved.selectedSlot)?saved.selectedSlot:null;undoStack=Array.isArray(saved.undoStack)?saved.undoStack:[];redoStack=Array.isArray(saved.redoStack)?saved.redoStack:[];clockStarted=guesses.length>0||current.some(Boolean)||undoStack.length>0||redoStack.length>0;
  document.querySelector('.title').innerHTML=practiceMode?practiceHeading:dailyHeading;shareButton.hidden=practiceMode&&!saved.completed;returnDailyButton.hidden=true;againButton.textContent=practiceMode?'PLAY ANOTHER RANDOM':'PLAY RANDOM PUZZLE';document.getElementById('modal').classList.remove('show');
  startedAt=clockStarted?Date.now()-Math.max(0,Number(saved.elapsedMs)||0):0;totalPausedMs=0;gameOver=false;pauseButton.disabled=false;
  if(restoringRandom&&saved.completed){clockStarted=true;pausedAt=0;startedAt=Date.now()-Math.max(0,Number(saved.elapsedMs)||0);render();restoredCompletionTimestamp=saved.completionTimestamp||null;endGame(!!saved.win);status.textContent='Completed random puzzle restored.';return true;}
@@ -544,7 +566,7 @@ function prepareResultImage(factory,message){
  const imagePromise=factory();practiceResultImagePromise=imagePromise;
  imagePromise.then(blob=>{if(practiceResultImagePromise!==imagePromise)return null;preparedPracticeResultBlob=blob;shareButton.disabled=false;document.getElementById('shareStatus').textContent='Result image ready to share.';return blob;}).catch(()=>{if(practiceResultImagePromise!==imagePromise)return null;preparedPracticeResultBlob=null;shareButton.disabled=false;document.getElementById('shareStatus').textContent='The written result is ready; the result image could not be prepared.';return null;});
 }
-function endGame(win){
+function endGame(win){recordBrowserStats(win);
  completionTimestamp=win?(restoredCompletionTimestamp===undefined?new Date().toISOString():restoredCompletionTimestamp):null;restoredCompletionTimestamp=undefined;
  saveProgress();
  const modal=document.getElementById('modal'),code=document.getElementById('code');code.innerHTML='';secret.forEach(p=>code.appendChild(makeShape(p)));
@@ -555,7 +577,7 @@ function endGame(win){
    dailyResultText=`CodeTest2 — ${DAILY_LABEL} Random\n${displayDailyDate(activeDailyDate||dailyDateKey())}\n${win?`Solved in ${guesses.length}/6 guesses`:'Not solved in 6 guesses'}\nTime: ${elapsed}${completionLine()?'\n'+completionLine():''}${notesUsed?'\nNotes Mode Used':''}`;
    shareButton.hidden=false;returnDailyButton.hidden=true;againButton.textContent='PLAY ANOTHER RANDOM';
    prepareResultImage(createPracticeSolutionImage,'Preparing the completed-puzzle image…');
-   try{localStorage.setItem(randomProgressStorageKey,JSON.stringify({version:2,completed:true,win,completionTimestamp,activeDailyDate:activeDailyDate||dailyDateKey(),practiceMode:true,secret,guesses,current:Array(CODE_LENGTH).fill(null),selectedSlot:null,undoStack:[],redoStack:[],clockStarted:true,elapsedMs:elapsedMilliseconds()}));}catch(error){}
+   try{localStorage.setItem(randomProgressStorageKey,JSON.stringify({version:2,statsAttemptId:ensureStatsAttemptId(),completed:true,win,completionTimestamp,activeDailyDate:activeDailyDate||dailyDateKey(),practiceMode:true,secret,guesses,current:Array(CODE_LENGTH).fill(null),selectedSlot:null,undoStack:[],redoStack:[],clockStarted:true,elapsedMs:elapsedMilliseconds()}));}catch(error){}
  }else{
    clearDailyProgress();
    preparedPracticeResultBlob=null;practiceResultImagePromise=null;shareButton.disabled=false;
@@ -667,6 +689,8 @@ function showGameModeChooser(startDaily,startRandom){
 document.getElementById('submitBtn').onclick=submit;document.getElementById('undoBtn').onclick=undoGuess;document.getElementById('redoBtn').onclick=redoGuess;document.getElementById('clearBtn').onclick=clearGuess;againButton.onclick=startPracticeGame;shareButton.onclick=shareResult;returnDailyButton.onclick=returnToDailyResult;pauseButton.onclick=pauseGame;resumeButton.onclick=resumeGame;notesButton.onclick=()=>{finishNotesMode();notesMode=!notesMode;updateNotesControls();renderPool();status.textContent=notesMode?'Notes Mode is on. Tap to mark items; drag to test an excluded item in your guess.':'Notes Mode is off. Palette items now build your guess.';};
 clearNotesButton.onclick=()=>{ensureNotesForCurrentPuzzle();ruledOutShapes.clear();ruledOutColors.clear();ruledOutCombos.clear();saveNotes();renderPool();render();status.textContent='All elimination notes for this puzzle were cleared.';};
 renderPool();updateNotesControls();const requestedGameMode=new URLSearchParams(location.search).get('mode');requestedGameMode==='random'?startPracticeGame(true):requestedGameMode==='daily'?newGame():(()=>{let last=null;try{last=localStorage.getItem(progressStorageKey+".lastMode");}catch(e){}if(last==="random")startPracticeGame(true);else if(last==="daily")newGame();else showGameModeChooser(newGame,()=>startPracticeGame(true));})();setInterval(checkDailyRollover,1000);setInterval(saveProgress,1000);window.addEventListener('pagehide',saveProgress);board.addEventListener('pointerdown',startClockOnActivity,true);board.addEventListener('keydown',startClockOnActivity,true);tiles.addEventListener('pointerdown',startClockOnActivity,true);tiles.addEventListener('keydown',startClockOnActivity,true);document.addEventListener('visibilitychange',()=>{if(document.hidden)saveProgress();else checkDailyRollover();});
+
+installBrowserStats();
 </script>
 </body>
 </html>
